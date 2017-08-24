@@ -1,5 +1,6 @@
 
 import config
+import json
 import luigi
 from luigi.format import UTF8
 import praw
@@ -17,25 +18,38 @@ class GetRedditContent(luigi.Task):
                          username=config.USERNAME,
                          password=config.PASSWORD)
 
-    def requires(self):
-        return []
-
     def output(self):
-        return luigi.LocalTarget('tmp/raw.tsv', format=UTF8)
+        return luigi.LocalTarget('tmp/raw.json')
 
     def run(self):
+        results = []
         subreddit = self.reddit.subreddit('coffee')
         now = int(time.time())
         start = now - 86400
         end = now
-        with self.output().open('w') as out_file:
-            for submission in subreddit.submissions(start, end):
-                submission.comments.replace_more(limit=0)
-                for comment in submission.comments.list():
-                    # replace new lines to separate comments
-                    text = comment.body.replace('\n', ' ')
-                    # print(comment.body)
-                    out_file.write('{}\n'.format(comment.body))
+        for submission in subreddit.submissions(start, end):
+            results.append({
+                "id": submission.id,
+                "type": "post",
+                "title": submission.title,
+                "text": submission.selftext,
+                "created": int(submission.created),
+                "score": submission.score,
+                "gilded": submission.gilded
+            })
+            submission.comments.replace_more(limit=0)
+            for comment in submission.comments.list():
+                results.append({
+                    "id": comment.id,
+                    "type": "comment",
+                    "text": comment.body,
+                    "created": int(comment.created),
+                    "score": comment.score,
+                    "gilded": comment.gilded
+                })
+
+        with self.output().open('w') as output:
+            json.dump(results, output)
 
 if __name__ == '__main__':
     luigi.run()
